@@ -1,0 +1,110 @@
+
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Street Survival</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:system-ui;background:#0b0d10;color:#f4f5f7}
+.wrap{max-width:1000px;margin:auto;padding:22px}.brand{font-size:30px;font-weight:900}.sub{color:#a8afb9}
+.panel{background:#15191f;border:1px solid #2b313a;border-radius:18px;padding:18px;margin-top:16px}
+input,button{font:inherit;border-radius:12px;padding:12px 14px}input{background:#0e1115;color:white;border:1px solid #353b45;width:100%}
+button{border:0;cursor:pointer;font-weight:800;background:#f4f5f7;color:#101216}.actions{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
+.action{background:#202630;color:white;border:1px solid #39414d;min-height:90px}.action:hover{background:#2b333e}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.stat{background:#101319;border-radius:14px;padding:14px}.num{font-size:24px;font-weight:900}.players{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.p{border:1px solid #303641;border-radius:14px;padding:14px}
+.log{max-height:210px;overflow:auto;color:#c9ced6;line-height:1.5}.hidden{display:none}.room{font-weight:900;letter-spacing:4px;font-size:24px}
+@media(max-width:650px){.actions{grid-template-columns:repeat(2,1fr)}.grid,.players{grid-template-columns:1fr}.wrap{padding:14px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand">STREET SURVIVAL</div>
+  <div class="sub">Real-time 2-player strategy game</div>
+
+  <div id="lobby" class="panel">
+    <h2>Enter the game</h2>
+    <input id="name" maxlength="16" placeholder="Your name">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
+      <button id="create">Create room</button>
+      <button id="join">Join room</button>
+    </div>
+    <input id="room" maxlength="5" placeholder="Room code" style="margin-top:10px;text-transform:uppercase">
+    <p class="sub">Share the 5-letter room code with your friend. Both players can use different devices.</p>
+  </div>
+
+  <div id="game" class="hidden">
+    <div class="panel">
+      <div>ROOM <span class="room" id="roomOut"></span></div>
+      <div id="status" class="sub">Waiting...</div>
+    </div>
+
+    <div class="players" id="players"></div>
+
+    <div class="panel">
+      <h2>Choose your move</h2>
+      <div class="actions">
+        <button class="action" data-a="work">💼<br>WORK<br><small>+$250</small></button>
+        <button class="action" data-a="rob">💰<br>ROB<br><small>Risk / reward</small></button>
+        <button class="action" data-a="invest">📈<br>INVEST<br><small>Chance to gain</small></button>
+        <button class="action" data-a="laylow">🕶️<br>LAY LOW<br><small>Heal + lose heat</small></button>
+        <button class="action" data-a="challenge">⚔️<br>CHALLENGE<br><small>Fight for cash</small></button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Rules</h2>
+      <div class="grid">
+        <div class="stat">🏆 <b>Win</b><br>Reach $5,000 or make your opponent hit 0 health.</div>
+        <div class="stat">⏱️ <b>Turns</b><br>Both players pick one move. The round resolves automatically.</div>
+        <div class="stat">🚨 <b>Heat</b><br>Robbing raises heat. Lay Low reduces it.</div>
+        <div class="stat">⚠️ <b>Risk</b><br>Rob and Invest can pay more, but can also hurt you.</div>
+      </div>
+    </div>
+
+    <div class="panel"><h2>Activity</h2><div id="log" class="log"></div></div>
+    <button id="restart" class="hidden" style="margin-top:12px">Play again</button>
+  </div>
+</div>
+
+<script>
+const ws=new WebSocket((location.protocol==="https:"?"wss://":"ws://")+location.host);
+const $=id=>document.getElementById(id);
+let myId=null;
+
+function send(x){if(ws.readyState===1)ws.send(JSON.stringify(x));}
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+
+ws.onopen=()=>{$("status").textContent="Connected";};
+ws.onclose=()=>{$("status").textContent="Connection lost. Refresh to reconnect.";};
+ws.onmessage=e=>{
+ const m=JSON.parse(e.data);
+ if(m.type==="error"){alert(m.message);return}
+ if(m.type==="joined"){
+   myId=m.id;$("roomOut").textContent=m.room;$("lobby").classList.add("hidden");$("game").classList.remove("hidden");
+ }
+ if(m.type==="waiting")$("status").textContent=m.message;
+ if(m.type==="state")render(m.state);
+};
+
+function render(s){
+ $("status").textContent=s.phase==="finished"?"Game over":`Round ${s.round} • ${s.players.length}/2 players`;
+ $("players").innerHTML=s.players.map(p=>`
+ <div class="p"><b>${esc(p.name)} ${p.id===myId?"(YOU)":""}</b>
+ <div class="grid" style="margin-top:8px">
+ <div class="stat">💵 <div class="num">$${p.money}</div>Cash</div>
+ <div class="stat">❤️ <div class="num">${p.health}</div>Health</div>
+ <div class="stat">🚨 <div class="num">${p.heat}</div>Heat</div>
+ <div class="stat">⭐ <div class="num">${p.reputation}</div>Rep</div>
+ </div></div>`).join("");
+ $("log").innerHTML=s.log.map(x=>`<div>• ${esc(x)}</div>`).join("");
+ $("restart").classList.toggle("hidden",s.phase!=="finished");
+ document.querySelectorAll(".action").forEach(b=>b.disabled=s.phase!=="playing"||s.players.length<2);
+}
+$("create").onclick=()=>send({type:"create",name:$("name").value.trim()||"Player 1"});
+$("join").onclick=()=>send({type:"join",name:$("name").value.trim()||"Player 2",room:$("room").value.trim().toUpperCase()});
+document.querySelectorAll(".action").forEach(b=>b.onclick=()=>send({type:"action",action:b.dataset.a}));
+$("restart").onclick=()=>send({type:"restart"});
+</script>
+</body>
+</html>
